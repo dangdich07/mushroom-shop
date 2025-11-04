@@ -1,0 +1,24 @@
+{
+  "name": "web",
+  "version": "1.0.0",
+  "private": true,
+  "scripts": {
+    "dev": "cross-env NEXTAUTH_URL=http://localhost:3000 NEXTAUTH_SECRET=303b9d6cec7f27c5c3be6eddf163a2363e76dda1c44db21e27e76cd90aeb9b12 next dev",
+    "build": "next build",
+    "start": "next start"
+  },
+  "dependencies": {
+    "next": "14.2.5",
+    "next-auth": "^4.24.7",
+    "react": "18.3.1",
+    "react-dom": "18.3.1"
+  },
+  "devDependencies": {
+    "@tailwindcss/postcss": "^4.1.16",
+    "@types/node": "24.7.2",
+    "@types/react": "19.2.2",
+    "cross-env": "^10.1.0",
+    "tailwindcss": "^4.1.16",
+    "typescript": "5.9.3"
+  }
+}

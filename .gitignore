@@ -1,0 +1,21 @@
+# Node/Next.js
+node_modules/
+.next/
+out/
+dist/
+build/
+.vercel/
+
+# Logs
+npm-debug.log*
+yarn-error.log*
+
+# Env files
+.env*
+!.env.example
+
+# OS/Editor
+.DS_Store
+Thumbs.db
+.vscode/
+.idea/
