@@ -1,7 +1,9 @@
 'use client';
 
-import { useState } from 'react';
+import { useEffect, useState } from 'react';
 import { useRouter } from 'next/navigation';
+import SkuEditor, { SkuRow } from '../../components/SkuEditor';
+import BackButton from '../../components/BackButton';
 
 export default function NewProductPage() {
   const router = useRouter();
@@ -16,14 +18,103 @@ export default function NewProductPage() {
     tags: '',
     featured: false,
     active: true,
-    priceMin: '',   // 👈 thêm
-    priceMax: '',   // 👈 thêm
+    priceMin: '',
+    priceMax: '',
   });
+
+  const [images, setImages] = useState<string[]>([]);
+  const [imagesText, setImagesText] = useState<string>('');
+  const [skuRows, setSkuRows] = useState<SkuRow[]>([]);
+
+  // Prefill từ Upload
+  useEffect(() => {
+    try {
+      const raw = localStorage.getItem('pendingImages');
+      if (raw) {
+        const arr = JSON.parse(raw);
+        if (Array.isArray(arr)) {
+          setImages(prev =>
+            Array.from(new Set([...(prev || []), ...arr]))
+          );
+        }
+        localStorage.removeItem('pendingImages');
+      }
+    } catch {
+      // ignore
+    }
+  }, []);
 
   const numOrUndefined = (v: string) => {
     const n = Number(v);
     return Number.isFinite(n) ? n : undefined;
   };
+
+  const normalizeTextToUrls = (txt: string) =>
+    Array.from(
+      new Set(
+        txt
+          .split(/\n|,/)
+          .map(s => s.trim())
+          .filter(Boolean)
+      )
+    );
+
+  const importFromText = () => {
+    const urls = normalizeTextToUrls(imagesText);
+    if (!urls.length) return;
+    setImages(prev =>
+      Array.from(new Set([...(prev || []), ...urls]))
+    );
+    setImagesText('');
+  };
+
+  const importFromUpload = () => {
+    try {
+      const raw = localStorage.getItem('pendingImages');
+      const arr = raw ? (JSON.parse(raw) as string[]) : [];
+      if (!arr?.length)
+        return alert('Không có ảnh nào trong Upload (pendingImages).');
+      setImages(prev =>
+        Array.from(new Set([...(prev || []), ...arr]))
+      );
+      localStorage.removeItem('pendingImages');
+    } catch {
+      alert('Không thể đọc pendingImages.');
+    }
+  };
+
+  const removeImage = (url: string) =>
+    setImages(prev => prev.filter(u => u !== url));
+
+  async function createSkus(productId: string, items: SkuRow[]) {
+    const data = items
+      .filter(x => x.sku && Number.isFinite(x.price))
+      .map(x => ({
+        sku: x.sku,
+        price: x.price,
+        weight: x.weight,
+        stock: x.stock ?? 0,
+        active: x.active ?? true,
+      }));
+
+    if (!data.length) return;
+
+    const base = process.env.NEXT_PUBLIC_API_URL || '/api';
+    const res = await fetch(`${base}/products/${productId}/skus`, {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      credentials: 'include',
+      body: JSON.stringify({ items: data }),
+    });
+
+    if (!res.ok) {
+      const err = await res.json().catch(() => ({}));
+      throw new Error(
+        err?.error?.message ||
+          `Tạo SKU thất bại (HTTP ${res.status})`
+      );
+    }
+  }
 
   const handleSubmit = async (e: React.FormEvent) => {
     e.preventDefault();
@@ -31,19 +122,21 @@ export default function NewProductPage() {
 
     try {
       const tagsArray = formData.tags
-        ? formData.tags.split(',').map((tag) => tag.trim()).filter(Boolean)
+        ? formData.tags
+            .split(',')
+            .map(t => t.trim())
+            .filter(Boolean)
         : [];
 
       const min = numOrUndefined(formData.priceMin);
       const max = numOrUndefined(formData.priceMax);
-
       if (min !== undefined && max !== undefined && min > max) {
-        alert('Giá từ (min) không được lớn hơn Giá đến (max).');
-        setLoading(false);
-        return;
+        throw new Error(
+          'Giá từ (min) không được lớn hơn Giá đến (max).'
+        );
       }
 
-      const body: any = {
+      const payload: any = {
         name: formData.name,
         slug: formData.slug,
         description: formData.description,
@@ -54,210 +147,354 @@ export default function NewProductPage() {
         active: formData.active,
       };
 
-      // Chỉ gắn priceRange khi có giá trị số
       if (min !== undefined || max !== undefined) {
-        body.priceRange = {
+        payload.priceRange = {
           ...(min !== undefined ? { min } : {}),
           ...(max !== undefined ? { max } : {}),
         };
       }
+      if (images.length) payload.images = images;
 
       const res = await fetch(
-        `${process.env.NEXT_PUBLIC_API_URL}/products`,
+        `${process.env.NEXT_PUBLIC_API_URL || '/api'}/products`,
         {
           method: 'POST',
           headers: { 'Content-Type': 'application/json' },
           credentials: 'include',
-          body: JSON.stringify(body),
+          body: JSON.stringify(payload),
         }
       );
 
-      if (res.ok) {
-        router.push('/products');
-      } else {
+      if (!res.ok) {
         const error = await res.json().catch(() => ({}));
-        alert(`Lỗi: ${error?.error?.message || 'Không thể tạo sản phẩm'}`);
+        throw new Error(
+          error?.error?.message || 'Không thể tạo sản phẩm'
+        );
       }
-    } catch {
-      alert('Lỗi kết nối đến server');
+
+      const created = await res.json();
+      const newId: string =
+        created?.product?._id ??
+        created?._id ??
+        created?.productId ??
+        '';
+
+      if (!newId) {
+        throw new Error(
+          'Không xác định được ID sản phẩm vừa tạo.'
+        );
+      }
+
+      try {
+        await createSkus(String(newId), skuRows);
+      } catch (skuErr: any) {
+        alert(
+          `⚠️ Sản phẩm đã tạo, nhưng thêm SKU thất bại: ${
+            skuErr?.message || ''
+          }`
+        );
+      }
+
+      router.push('/products');
+    } catch (e: any) {
+      alert(`Lỗi: ${e?.message || 'Không thể tạo sản phẩm'}`);
     } finally {
       setLoading(false);
     }
   };
 
   const handleInputChange = (
-    e: React.ChangeEvent<HTMLInputElement | HTMLTextAreaElement | HTMLSelectElement>
+    e:
+      | React.ChangeEvent<HTMLInputElement>
+      | React.ChangeEvent<HTMLTextAreaElement>
+      | React.ChangeEvent<HTMLSelectElement>
   ) => {
     const { name, value, type } = e.target;
-    setFormData((prev) => ({
+    setFormData(prev => ({
       ...prev,
-      [name]: type === 'checkbox' ? (e.target as HTMLInputElement).checked : value,
+      [name]:
+        type === 'checkbox'
+          ? (e.target as HTMLInputElement).checked
+          : value,
     }));
   };
 
   return (
-    <div className="space-y-6">
-      <div>
-        <h1 className="text-2xl font-bold text-gray-900">Thêm sản phẩm mới</h1>
-        <p className="text-gray-600">Tạo sản phẩm mới cho cửa hàng</p>
-      </div>
+    <div className="mx-auto max-w-5xl space-y-6">
+      <BackButton label="Quay lại danh sách sản phẩm" />
 
-      <form onSubmit={handleSubmit} className="bg-white rounded-lg shadow p-6 space-y-6">
-        <div className="grid grid-cols-1 md:grid-cols-2 gap-6">
-          {/* Tên sản phẩm */}
+      {/* Header */}
+      <header className="space-y-2">
+        <div className="inline-flex items-center gap-2 rounded-full bg-slate-900 px-3 py-1 text-[10px] font-medium text-slate-50">
+          <span>🍄 Thêm sản phẩm mới</span>
+          <span className="rounded-full bg-white/10 px-2">
+            Form thông tin + SKU + hình ảnh
+          </span>
+        </div>
+        <h1 className="text-2xl font-bold text-slate-900">
+          Tạo sản phẩm mới
+        </h1>
+        <p className="text-sm text-slate-600">
+          Điền đầy đủ thông tin giúp sản phẩm hiển thị chuyên nghiệp và dễ
+          tìm kiếm.
+        </p>
+      </header>
+
+      {/* Form */}
+      <form
+        onSubmit={handleSubmit}
+        className="space-y-8 rounded-2xl bg-white p-6 shadow-sm ring-1 ring-slate-100"
+      >
+        {/* Tên & slug */}
+        <section className="grid gap-6 md:grid-cols-2">
           <div>
-            <label className="block text-sm font-medium text-gray-700 mb-2">Tên sản phẩm *</label>
+            <label className="mb-1.5 block text-sm font-medium text-slate-800">
+              Tên sản phẩm <span className="text-rose-500">*</span>
+            </label>
             <input
               type="text"
               name="name"
               value={formData.name}
               onChange={handleInputChange}
               required
-              className="w-full border border-gray-300 rounded-lg px-3 py-2 focus:ring-2 focus:ring-blue-500 focus:border-blue-500"
-              placeholder="Ví dụ: Nấm linh chi"
+              placeholder="Ví dụ: Nấm linh chi hữu cơ"
+              className="w-full rounded-xl border border-slate-200 px-3 py-2.5 text-sm text-slate-900 placeholder:text-slate-400 focus:border-emerald-500 focus:outline-none focus:ring-2 focus:ring-emerald-100"
             />
           </div>
-
-          {/* Slug */}
           <div>
-            <label className="block text-sm font-medium text-gray-700 mb-2">Slug *</label>
+            <label className="mb-1.5 block text-sm font-medium text-slate-800">
+              Slug URL <span className="text-rose-500">*</span>
+            </label>
             <input
               type="text"
               name="slug"
               value={formData.slug}
               onChange={handleInputChange}
               required
-              className="w-full border border-gray-300 rounded-lg px-3 py-2 focus:ring-2 focus:ring-blue-500 focus:border-blue-500"
-              placeholder="Ví dụ: nam-linh-chi"
+              placeholder="vi-du: nam-linh-chi-huu-co"
+              className="w-full rounded-xl border border-slate-200 px-3 py-2.5 text-sm text-slate-900 placeholder:text-slate-400 focus:border-emerald-500 focus:outline-none focus:ring-2 focus:ring-emerald-100"
             />
-            <p className="text-xs text-gray-500 mt-1">URL sẽ là: /products/{formData.slug}</p>
+            <p className="mt-1 text-[10px] text-slate-500">
+              URL chi tiết: <span className="font-mono">
+                /products/{formData.slug || 'slug-san-pham'}
+              </span>
+            </p>
           </div>
-        </div>
+        </section>
 
-        {/* Mô tả ngắn */}
-        <div>
-          <label className="block text-sm font-medium text-gray-700 mb-2">Mô tả ngắn</label>
-          <textarea
-            name="shortDescription"
-            value={formData.shortDescription}
-            onChange={handleInputChange}
-            rows={2}
-            className="w-full border border-gray-300 rounded-lg px-3 py-2 focus:ring-2 focus:ring-blue-500 focus:border-blue-500"
-            placeholder="Mô tả ngắn về sản phẩm..."
-          />
-        </div>
-
-        {/* Mô tả chi tiết */}
-        <div>
-          <label className="block text-sm font-medium text-gray-700 mb-2">Mô tả chi tiết</label>
-          <textarea
-            name="description"
-            value={formData.description}
-            onChange={handleInputChange}
-            rows={4}
-            className="w-full border border-gray-300 rounded-lg px-3 py-2 focus:ring-2 focus:ring-blue-500 focus:border-blue-500"
-            placeholder="Mô tả chi tiết về sản phẩm..."
-          />
-        </div>
-
-        <div className="grid grid-cols-1 md:grid-cols-2 gap-6">
-          {/* Danh mục */}
+        {/* Mô tả */}
+        <section className="space-y-4">
           <div>
-            <label className="block text-sm font-medium text-gray-700 mb-2">Danh mục</label>
+            <label className="mb-1.5 block text-sm font-medium text-slate-800">
+              Mô tả ngắn
+            </label>
+            <textarea
+              name="shortDescription"
+              value={formData.shortDescription}
+              onChange={handleInputChange}
+              rows={2}
+              placeholder="Hiển thị ở danh sách sản phẩm..."
+              className="w-full rounded-xl border border-slate-200 px-3 py-2.5 text-sm focus:border-emerald-500 focus:outline-none focus:ring-2 focus:ring-emerald-100"
+            />
+          </div>
+          <div>
+            <label className="mb-1.5 block text-sm font-medium text-slate-800">
+              Mô tả chi tiết
+            </label>
+            <textarea
+              name="description"
+              value={formData.description}
+              onChange={handleInputChange}
+              rows={4}
+              placeholder="Thông tin chi tiết, công dụng, hướng dẫn sử dụng..."
+              className="w-full rounded-xl border border-slate-200 px-3 py-2.5 text-sm focus:border-emerald-500 focus:outline-none focus:ring-2 focus:ring-emerald-100"
+            />
+          </div>
+        </section>
+
+        {/* Danh mục + Tags */}
+        <section className="grid gap-6 md:grid-cols-2">
+          <div>
+            <label className="mb-1.5 block text-sm font-medium text-slate-800">
+              Danh mục (slug)
+            </label>
             <input
               type="text"
               name="category"
               value={formData.category}
               onChange={handleInputChange}
-              className="w-full border border-gray-300 rounded-lg px-3 py-2 focus:ring-2 focus:ring-blue-500 focus:border-blue-500"
-              placeholder="Ví dụ: nam-duoc-lieu"
+              placeholder="ví dụ: nam-duoc-lieu"
+              className="w-full rounded-xl border border-slate-200 px-3 py-2.5 text-sm focus:border-emerald-500 focus:outline-none focus:ring-2 focus:ring-emerald-100"
             />
-            <p className="text-xs text-gray-500 mt-1">Nhập slug danh mục</p>
+            <p className="mt-1 text-[10px] text-slate-500">
+              Nhập slug danh mục đã tồn tại.
+            </p>
           </div>
-
-          {/* Tags */}
           <div>
-            <label className="block text-sm font-medium text-gray-700 mb-2">Tags</label>
+            <label className="mb-1.5 block text-sm font-medium text-slate-800">
+              Tags
+            </label>
             <input
               type="text"
               name="tags"
               value={formData.tags}
               onChange={handleInputChange}
-              className="w-full border border-gray-300 rounded-lg px-3 py-2 focus:ring-2 focus:ring-blue-500 focus:border-blue-500"
-              placeholder="tươi, ngon, dinh dưỡng"
+              placeholder="tươi, sạch, hữu cơ"
+              className="w-full rounded-xl border border-slate-200 px-3 py-2.5 text-sm focus:border-emerald-500 focus:outline-none focus:ring-2 focus:ring-emerald-100"
             />
-            <p className="text-xs text-gray-500 mt-1">Phân cách bằng dấu phẩy</p>
+            <p className="mt-1 text-[10px] text-slate-500">
+              Phân cách nhiều tag bằng dấu phẩy.
+            </p>
           </div>
-        </div>
+        </section>
 
         {/* Giá */}
-        <div className="grid grid-cols-1 md:grid-cols-2 gap-6">
+        <section className="grid gap-6 md:grid-cols-2">
           <div>
-            <label className="block text-sm font-medium text-gray-700 mb-2">Giá từ (VND)</label>
+            <label className="mb-1.5 block text-sm font-medium text-slate-800">
+              Giá từ (VND)
+            </label>
             <input
               type="number"
               name="priceMin"
               value={formData.priceMin}
               onChange={handleInputChange}
               min={0}
-              className="w-full border border-gray-300 rounded-lg px-3 py-2 focus:ring-2 focus:ring-blue-500 focus:border-blue-500"
-              placeholder="Ví dụ: 199000"
+              placeholder="199000"
+              className="w-full rounded-xl border border-slate-200 px-3 py-2.5 text-sm focus:border-emerald-500 focus:outline-none focus:ring-2 focus:ring-emerald-100"
             />
           </div>
           <div>
-            <label className="block text-sm font-medium text-gray-700 mb-2">Giá đến (VND)</label>
+            <label className="mb-1.5 block text-sm font-medium text-slate-800">
+              Giá đến (VND)
+            </label>
             <input
               type="number"
               name="priceMax"
               value={formData.priceMax}
               onChange={handleInputChange}
               min={0}
-              className="w-full border border-gray-300 rounded-lg px-3 py-2 focus:ring-2 focus:ring-blue-500 focus:border-blue-500"
-              placeholder="Ví dụ: 299000"
+              placeholder="299000"
+              className="w-full rounded-xl border border-slate-200 px-3 py-2.5 text-sm focus:border-emerald-500 focus:outline-none focus:ring-2 focus:ring-emerald-100"
             />
           </div>
-        </div>
+        </section>
+
+        {/* Ảnh */}
+        <section className="space-y-3">
+          <div className="flex items-center justify-between">
+            <label className="text-sm font-medium text-slate-800">
+              Hình ảnh sản phẩm (URL tuyệt đối)
+            </label>
+            <div className="flex gap-2">
+              <button
+                type="button"
+                onClick={importFromUpload}
+                className="rounded-full bg-slate-900 px-3 py-1.5 text-[10px] font-medium text-white hover:bg-slate-800"
+              >
+                Lấy từ Upload
+              </button>
+            </div>
+          </div>
+
+          <textarea
+            value={imagesText}
+            onChange={e => setImagesText(e.target.value)}
+            rows={2}
+            placeholder="Dán URL ảnh, mỗi dòng hoặc ngăn cách bằng dấu phẩy..."
+            className="w-full rounded-xl border border-slate-200 px-3 py-2.5 text-sm focus:border-emerald-500 focus:outline-none focus:ring-2 focus:ring-emerald-100"
+          />
+
+          <button
+            type="button"
+            onClick={importFromText}
+            className="inline-flex items-center gap-2 rounded-full bg-slate-900 px-4 py-1.5 text-[10px] font-medium text-white hover:bg-slate-800"
+          >
+            Thêm ảnh từ ô trên
+          </button>
+
+          {images.length > 0 && (
+            <div className="grid gap-4 md:grid-cols-4 lg:grid-cols-6">
+              {images.map(u => (
+                <div
+                  key={u}
+                  className="group relative rounded-xl border border-slate-100 bg-slate-50 p-1"
+                >
+                  <div className="aspect-square overflow-hidden rounded-lg bg-slate-100">
+                    {/* eslint-disable-next-line @next/next/no-img-element */}
+                    <img
+                      src={u}
+                      alt=""
+                      className="h-full w-full object-cover"
+                    />
+                  </div>
+                  <div className="mt-1 truncate text-[9px] text-slate-500">
+                    {u}
+                  </div>
+                  <button
+                    type="button"
+                    onClick={() => removeImage(u)}
+                    className="absolute right-1 top-1 hidden rounded-full bg-rose-600 px-1.5 py-0.5 text-[9px] text-white shadow-sm group-hover:inline-flex"
+                  >
+                    Xoá
+                  </button>
+                </div>
+              ))}
+            </div>
+          )}
+        </section>
 
         {/* Trạng thái */}
-        <div className="flex flex-wrap gap-6">
-          <label className="flex items-center">
+        <section className="flex flex-wrap gap-4">
+          <label className="inline-flex items-center gap-2 rounded-full bg-amber-50 px-3 py-1.5 text-[11px] text-amber-800">
             <input
               type="checkbox"
               name="featured"
               checked={formData.featured}
               onChange={handleInputChange}
-              className="mr-2"
+              className="h-4 w-4 rounded border-amber-300 text-amber-600 focus:ring-amber-500"
             />
-            <span className="text-sm font-medium text-gray-700">Sản phẩm nổi bật</span>
+            <span>Đánh dấu là sản phẩm nổi bật</span>
           </label>
-
-          <label className="flex items-center">
+          <label className="inline-flex items-center gap-2 rounded-full bg-emerald-50 px-3 py-1.5 text-[11px] text-emerald-800">
             <input
               type="checkbox"
               name="active"
               checked={formData.active}
               onChange={handleInputChange}
-              className="mr-2"
+              className="h-4 w-4 rounded border-emerald-300 text-emerald-600 focus:ring-emerald-500"
             />
-            <span className="text-sm font-medium text-gray-700">Hoạt động</span>
+            <span>Hiển thị sản phẩm trên cửa hàng</span>
           </label>
-        </div>
+        </section>
 
-        {/* Buttons */}
-        <div className="flex justify-end space-x-4 pt-6 border-t">
+        {/* SKU Editor */}
+        <section className="space-y-2">
+          <h2 className="text-sm font-semibold text-slate-800">
+            Cấu hình SKU / biến thể
+          </h2>
+          <p className="text-[10px] text-slate-500">
+            Thêm SKU cho từng loại trọng lượng, size, gói bán... (có thể để
+            trống, thêm sau).
+          </p>
+          <SkuEditor value={skuRows} onChange={setSkuRows} />
+        </section>
+
+        {/* Actions */}
+        <div className="flex justify-end gap-3 border-t border-slate-100 pt-5">
           <button
             type="button"
             onClick={() => router.back()}
-            className="px-4 py-2 border border-gray-300 rounded-lg text-gray-700 hover:bg-gray-50"
+            className="inline-flex items-center gap-1 rounded-full border border-slate-200 px-4 py-2 text-xs font-medium text-slate-700 hover:bg-slate-50"
           >
             Hủy
           </button>
           <button
             type="submit"
             disabled={loading}
-            className="px-6 py-2 bg-blue-600 text-white rounded-lg hover:bg-blue-700 disabled:opacity-50"
+            className="inline-flex items-center gap-2 rounded-full bg-emerald-600 px-6 py-2 text-xs font-semibold text-white shadow-sm hover:bg-emerald-500 disabled:cursor-not-allowed disabled:opacity-60"
           >
-            {loading ? 'Đang tạo...' : 'Tạo sản phẩm'}
+            {loading ? 'Đang tạo…' : 'Tạo sản phẩm'}
           </button>
         </div>
       </form>

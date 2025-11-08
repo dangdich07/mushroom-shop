@@ -2,15 +2,17 @@
 const nextConfig = {
   reactStrictMode: true,
 
+  images: {
+    remotePatterns: [
+      { protocol: 'https', hostname: 'res.cloudinary.com' },
+    ],
+    formats: ['image/avif', 'image/webp'],
+  },
+
   async rewrites() {
     return [
-      // Alias riêng cho backend, bỏ prefix /backend khi proxy
       { source: '/api/backend/:path*', destination: 'http://localhost:4000/:path*' },
-
-      // Để NextAuth tự xử lý, không proxy
       { source: '/api/auth/:path*', destination: '/api/auth/:path*' },
-
-      // Các API khác mới proxy sang backend (giữ nguyên)
       { source: '/api/:path*', destination: 'http://localhost:4000/:path*' },
     ];
   },

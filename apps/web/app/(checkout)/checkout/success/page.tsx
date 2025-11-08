@@ -1,91 +1,72 @@
+// apps/web/app/(checkout)/checkout/success/page.tsx
 'use client';
 
-import { useEffect, useRef, useState } from 'react';
-import Link from 'next/link';
-import { useRouter, useSearchParams } from 'next/navigation';
-import { useCart } from '../../../../hooks/useCart';
+import { useEffect, useMemo, useState } from 'react';
+import { useSearchParams, useRouter } from 'next/navigation';
+
+type Order = { _id: string; status: string };
 
 export default function CheckoutSuccessPage() {
+  const sp = useSearchParams();
   const router = useRouter();
-  const search = useSearchParams();
-  const { clear } = useCart(); // <-- thêm
+  const orderId = useMemo(() => sp.get('orderId') || '', [sp]);
+  const [order, setOrder] = useState<Order | null>(null);
+  const [error, setError] = useState<string>('');
 
-  const [orderId, setOrderId] = useState<string | null>(null);
-  const [sec, setSec] = useState(3);
-  const redirected = useRef(false);
-  const cleared = useRef(false); // <-- tránh clear nhiều lần
-
-  // Lấy orderId từ query hoặc localStorage
-  useEffect(() => {
-    const q = search.get('orderId');
-    const local = typeof window !== 'undefined' ? localStorage.getItem('lastOrderId') : null;
-    const id = q || local;
-    if (id) {
-      setOrderId(id);
-      if (local) localStorage.removeItem('lastOrderId');
-    }
-  }, [search]);
-
-  // Khi đã có orderId => xoá giỏ (một lần)
-  useEffect(() => {
-    if (!orderId || cleared.current) return;
-    cleared.current = true;
-    clear(); // <-- xoá giỏ hàng để header badge cập nhật ngay
-  }, [orderId, clear]);
-
-  // Đếm ngược hiển thị
   useEffect(() => {
     if (!orderId) return;
-    setSec(3);
-    const iv = setInterval(() => setSec(s => (s > 0 ? s - 1 : 0)), 1000);
-    return () => clearInterval(iv);
-  }, [orderId]);
+    let alive = true;
 
-  // Redirect sau 3s
-  useEffect(() => {
-    if (!orderId || redirected.current) return;
-    redirected.current = true;
-    const to = setTimeout(() => { router.replace(`/orders/${orderId}`); }, 3000);
-    return () => clearTimeout(to);
+    async function tick() {
+      try {
+        const res = await fetch(`/api/orders/${orderId}`, { credentials: 'include', cache: 'no-store' });
+        if (!res.ok) throw new Error(`HTTP ${res.status}`);
+        const data = (await res.json()) as Order;
+        if (!alive) return;
+        setOrder(data);
+        // Nếu muốn tự động về trang đơn khi đã paid:
+        // if (data.status === 'paid') router.replace(`/orders/${orderId}`);
+      } catch (e: any) {
+        if (!alive) return;
+        setError(e?.message || 'Fetch error');
+      }
+    }
+
+    tick();
+    const iv = setInterval(tick, 2000);
+    const stop = setTimeout(() => clearInterval(iv), 30000);
+
+    return () => { alive = false; clearInterval(iv); clearTimeout(stop); };
   }, [orderId, router]);
 
-  return (
-    <main className="max-w-xl mx-auto p-6 text-center space-y-6">
-      <div className="text-5xl">✅</div>
-      <h1 className="text-2xl font-bold">Thanh toán thành công</h1>
+  if (!orderId) return <main className="p-6">Thiếu <code>orderId</code> trong URL.</main>;
 
-      {orderId ? (
-        <>
-          <p className="text-gray-700">
-            Cảm ơn bạn! Đơn hàng <span className="font-mono font-semibold">#{orderId}</span> đã được tạo.
-          </p>
-          <p className="text-gray-500">Tự động chuyển tới chi tiết đơn hàng sau <b>{sec}</b>s…</p>
-          <div className="flex items-center justify-center gap-3">
-            <Link href={`/orders/${orderId}`} className="inline-flex items-center rounded-lg px-4 py-2 text-sm font-medium bg-black text-white hover:opacity-90">
-              Xem đơn hàng ngay
-            </Link>
-            <Link href="/products" className="inline-flex items-center rounded-lg px-4 py-2 text-sm border hover:bg-white">
-              Tiếp tục mua sắm
-            </Link>
-          </div>
-        </>
-      ) : (
-        <>
-          <p className="text-gray-600">Không tìm thấy <span className="font-mono">orderId</span>.</p>
-          <div className="flex items-center justify-center gap-3">
-            <Link href="/" className="inline-flex items-center rounded-lg px-4 py-2 text-sm font-medium bg-black text-white hover:opacity-90">
-              Về trang chủ
-            </Link>
-            <Link href="/account/orders" className="inline-flex items-center rounded-lg px-4 py-2 text-sm border hover:bg-white">
-              Đơn hàng của tôi
-            </Link>
-          </div>
-        </>
+  return (
+    <main className="p-6 space-y-3">
+      <h1 className="text-xl font-semibold">Thanh toán thành công (đang cập nhật)</h1>
+      <p>Đang kiểm tra trạng thái đơn hàng <b>#{orderId}</b>…</p>
+
+      {error && <p className="text-red-600 text-sm">Lỗi: {error}</p>}
+      {order && (
+        <pre className="bg-gray-50 p-3 rounded text-sm overflow-auto">
+          {JSON.stringify(order, null, 2)}
+        </pre>
       )}
 
-      <p className="text-xs text-gray-400">
-        Nếu cần hỗ trợ, vui lòng liên hệ <a className="underline" href="/contact">chăm sóc khách hàng</a>.
-      </p>
+      <div className="space-x-3">
+        <a
+          href={`/orders/${orderId}`}
+          className="inline-flex items-center rounded-lg px-4 py-2 text-sm font-medium bg-black text-white hover:opacity-90"
+        >
+          Xem đơn hàng
+        </a>
+        <a
+          href="/"
+          className="inline-flex items-center rounded-lg px-4 py-2 text-sm font-medium border border-gray-300 hover:bg-gray-50"
+        >
+          Về trang chủ
+        </a>
+      </div>
     </main>
   );
 }

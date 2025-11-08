@@ -1,5 +1,15 @@
 /** @type {import('next').NextConfig} */
 const nextConfig = {
+  // ✅ Cho phép hiển thị ảnh Cloudinary với <Image/>
+  images: {
+    domains: ['res.cloudinary.com'],
+    // (tuỳ chọn) nếu muốn chặt hơn có thể dùng remotePatterns
+    // remotePatterns: [
+    //   { protocol: 'https', hostname: 'res.cloudinary.com', pathname: '/**' },
+    // ],
+    formats: ['image/avif', 'image/webp'],
+  },
+
   // Không đặt bất kỳ redirect nào về 3000 tại đây
   async redirects() {
     return [];

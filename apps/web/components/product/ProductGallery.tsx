@@ -10,60 +10,61 @@ export default function ProductGallery({
   name: string;
   images?: string[];
 }) {
-  const pics = (images ?? []).filter(Boolean);
+  const list = Array.isArray(images) ? images : [];
   const [active, setActive] = useState(0);
-  const has = pics.length > 0;
 
   return (
     <div className="space-y-3">
-      {/* Main */}
-      <div className="aspect-square w-full overflow-hidden rounded-xl border bg-white">
-        {has ? (
-          <Image
-            src={pics[active]!}
-            alt={name}
-            fill
-            sizes="(min-width: 1024px) 512px, 100vw"
-            className="object-contain"
-            priority
-          />
-        ) : (
-          <div className="flex h-full items-center justify-center text-gray-400">
-            <div className="text-center">
-              <div className="text-5xl">🍄</div>
-              <div className="mt-2 text-sm">Chưa có ảnh</div>
+      {/* Ảnh lớn */}
+      <div className="relative overflow-hidden rounded-xl border bg-white">
+        {/* Giữ tỉ lệ, chặn tràn màn hình */}
+        <div className="aspect-[4/3] md:aspect-square max-h-[70vh]">
+          {list[active] ? (
+            <Image
+              src={list[active]}
+              alt={name}
+              fill
+              sizes="(max-width: 768px) 100vw, 50vw"
+              className="object-contain"   // ⬅️ không che khuất, không tràn
+              priority
+            />
+          ) : (
+            <div className="grid h-full w-full place-items-center text-sm text-gray-400">
+              Chưa có ảnh
             </div>
-          </div>
-        )}
+          )}
+        </div>
       </div>
 
-      {/* Thumbs */}
-      <div className="grid grid-cols-5 gap-2">
-        {(has ? pics : [null, null, null]).map((src, idx) => (
-          <button
-            key={idx}
-            onClick={() => has && setActive(idx)}
-            className={`relative aspect-square overflow-hidden rounded-lg border ${
-              active === idx ? 'ring-2 ring-black' : ''
-            }`}
-            aria-label={`Ảnh ${idx + 1}`}
-          >
-            {src ? (
-              <Image
-                src={src}
-                alt={`${name} - ${idx + 1}`}
-                fill
-                sizes="120px"
-                className="object-cover"
-              />
-            ) : (
-              <div className="flex h-full items-center justify-center text-gray-300 text-xs">
-                No image
+      {/* Thumbnail */}
+      {list.length > 1 && (
+        <div className="grid grid-cols-4 gap-2">
+          {list.map((src, i) => (
+            <button
+              key={src + i}
+              type="button"
+              onClick={() => setActive(i)}
+              className={
+                'relative overflow-hidden rounded-lg border ' +
+                (i === active
+                  ? 'ring-2 ring-black'
+                  : 'hover:ring-1 hover:ring-gray-300')
+              }
+              title={`Ảnh ${i + 1}`}
+            >
+              <div className="aspect-square">
+                <Image
+                  src={src}
+                  alt={`${name} - ${i + 1}`}
+                  fill
+                  sizes="120px"
+                  className="object-cover"
+                />
               </div>
-            )}
-          </button>
-        ))}
-      </div>
+            </button>
+          ))}
+        </div>
+      )}
     </div>
   );
 }

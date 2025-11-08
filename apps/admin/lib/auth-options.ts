@@ -1,4 +1,5 @@
-import type { AuthOptions } from 'next-auth';
+// apps/admin/lib/auth-options.ts
+import type { NextAuthConfig } from 'next-auth';             // FIX: v5 dùng NextAuthConfig
 import Credentials from 'next-auth/providers/credentials';
 import { cookies } from 'next/headers';
 
@@ -6,7 +7,7 @@ const API_BASE = process.env.NEXT_PUBLIC_API_URL || 'http://localhost:4000';
 const API_SESSION_COOKIE_NAME =
   process.env.NEXT_PUBLIC_SESSION_COOKIE_NAME || process.env.COOKIE_NAME || 'session';
 
-export const authOptions: AuthOptions = {
+export const authOptions: NextAuthConfig = {                 // FIX: đổi sang NextAuthConfig
   providers: [
     Credentials({
       name: 'Credentials',
@@ -48,9 +49,7 @@ export const authOptions: AuthOptions = {
               path: cookieConfig.path || '/',
               maxAge: maxAgeSeconds
             });
-          } catch {
-            // ignore
-          }
+          } catch {}
         }
 
         return {
@@ -62,66 +61,51 @@ export const authOptions: AuthOptions = {
       }
     })
   ],
-  session: { strategy: 'jwt' as const },
+  session: { strategy: 'jwt' },
   callbacks: {
-  // 🔐 Ghi thông tin vào JWT
-  async jwt({ token, user }) {
-    // Khi đăng nhập lần đầu
-    if (user) {
-      (token as any).id = (user as any).id;
-      token.email = (user as any).email;
-      (token as any).roles = (user as any).roles || [];
-
-      if ((user as any).sessionToken) {
-        (token as any).backendSessionToken = (user as any).sessionToken;
-      }
-    }
-
-    // 🔄 Nếu có backendSessionToken thì xác minh lại /auth/me để lấy roles mới nhất
-    const backendToken = (token as any).backendSessionToken;
-    if (backendToken) {
-      try {
-        const res = await fetch(`${API_BASE}/auth/me`, {
-          headers: {
-            Authorization: `Bearer ${backendToken}`,
-            'Content-Type': 'application/json'
-          },
-          credentials: 'include'
-        });
-
-        if (res.ok) {
-          const data = await res.json();
-          if (data?.user) {
-            (token as any).id = data.user.id;
-            token.email = data.user.email;
-            (token as any).roles = data.user.roles || [];
-          }
+    async jwt({ token, user }) {
+      if (user) {
+        (token as any).id = (user as any).id;
+        token.email = (user as any).email;
+        (token as any).roles = (user as any).roles || [];
+        if ((user as any).sessionToken) {
+          (token as any).backendSessionToken = (user as any).sessionToken;
         }
-      } catch (err) {
-        console.warn('[jwt callback] Fetch /auth/me failed:', err);
       }
-    }
 
-    return token;
+      const backendToken = (token as any).backendSessionToken;
+      if (backendToken) {
+        try {
+          const res = await fetch(`${API_BASE}/auth/me`, {
+            headers: { Authorization: `Bearer ${backendToken}`, 'Content-Type': 'application/json' },
+            credentials: 'include'
+          });
+          if (res.ok) {
+            const data = await res.json();
+            if (data?.user) {
+              (token as any).id = data.user.id;
+              token.email = data.user.email;
+              (token as any).roles = data.user.roles || [];
+            }
+          }
+        } catch {}
+      }
+
+      return token;
+    },
+
+    async session({ session, token }) {
+      (session as any).user = {
+        id: (token as any).id,
+        email: token.email,
+        roles: (token as any).roles || []
+      };
+      if ((token as any).backendSessionToken) {
+        (session as any).accessToken = (token as any).backendSessionToken;
+      }
+      return session;
+    }
   },
-
-  // 🧭 Ghi JWT ra session gửi xuống client
-  async session({ session, token }) {
-    (session as any).user = {
-      id: (token as any).id,
-      email: token.email,
-      roles: (token as any).roles || []
-    };
-
-    // giữ accessToken để client gọi API dễ dàng
-    if ((token as any).backendSessionToken) {
-      (session as any).accessToken = (token as any).backendSessionToken;
-    }
-
-    return session;
-  }
-},
-
   pages: { signIn: '/(account)/login' },
   secret: process.env.NEXTAUTH_SECRET
 };

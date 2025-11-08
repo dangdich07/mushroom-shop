@@ -19,10 +19,9 @@ export default function CartPage() {
     setErr(null);
     if (!items.length) return;
 
-    // chỉ lấy item hợp lệ
     const payload = items
-      .filter(it => it.sku && it.qty > 0)
-      .map(it => ({ sku: it.sku, qty: it.qty }));
+      .filter((it) => it.sku && it.qty > 0)
+      .map((it) => ({ sku: it.sku, qty: it.qty }));
 
     if (!payload.length) {
       setErr('Không có mặt hàng hợp lệ để thanh toán.');
@@ -32,7 +31,9 @@ export default function CartPage() {
     try {
       setLoading(true);
       const { url, orderId } = await createCheckoutSession(payload);
-      try { localStorage.setItem('lastOrderId', String(orderId)); } catch {}
+      try {
+        localStorage.setItem('lastOrderId', String(orderId));
+      } catch {}
       window.location.assign(url);
     } catch (e: any) {
       const msg = String(e?.message || '');
@@ -51,62 +52,145 @@ export default function CartPage() {
     }
   }, [items]);
 
+  const isEmpty = items.length === 0;
+
   return (
-    <main className="max-w-5xl mx-auto px-4 sm:px-6 lg:px-8 py-8 space-y-6">
-      <h1 className="text-2xl font-bold">Giỏ hàng</h1>
-
-      {items.length === 0 ? (
-        <div className="rounded-xl border bg-white p-6 text-center space-y-3">
-          <p className="text-gray-600">Giỏ hàng của bạn đang trống.</p>
-          <Link href="/products" className="inline-flex h-10 items-center rounded-lg bg-black px-4 text-white">
-            Mua sắm ngay
-          </Link>
-        </div>
-      ) : (
-        <div className="grid grid-cols-1 lg:grid-cols-3 gap-6">
-          <section className="lg:col-span-2 space-y-3">
-            {items.map((it) => (
-              <CartItemRow
-                key={`${it.sku}`}
-                item={it}
-                onChangeQty={(q) => setQty(it.sku, q)}
-                onRemove={() => removeItem(it.sku)}
-              />
-            ))}
-            <button onClick={clear} className="text-sm text-gray-600 hover:underline">
-              Xoá tất cả
-            </button>
-          </section>
-
-          <aside className="rounded-xl border bg-white p-6 space-y-4 h-fit">
-            <div className="flex justify-between text-sm">
-              <span>Tổng số lượng</span>
-              <span className="font-medium">{totalQty}</span>
+    <main className="min-h-screen bg-slate-50">
+      <div className="max-w-5xl mx-auto px-4 sm:px-6 lg:px-8 py-8 space-y-6">
+        {/* Heading */}
+        <header className="space-y-2">
+          <div className="inline-flex items-center gap-2 px-3 py-1 rounded-full bg-emerald-50 border border-emerald-100 text-[10px] text-emerald-700">
+            <span className="text-base">🧺</span>
+            Giỏ hàng Mushroom Shop
+          </div>
+          <div className="flex flex-col sm:flex-row sm:items-end sm:justify-between gap-2">
+            <div>
+              <h1 className="text-2xl md:text-3xl font-semibold tracking-tight text-slate-900">
+                Giỏ hàng
+              </h1>
+              <p className="text-xs md:text-sm text-slate-600">
+                Kiểm tra lại sản phẩm & số lượng trước khi thanh toán.
+              </p>
             </div>
-            <div className="flex justify-between text-lg font-semibold">
-              <span>Tạm tính</span>
-              <span>{formatVND(subtotal)}</span>
-            </div>
-
-            {err && (
-              <div className="rounded-lg border border-red-200 bg-red-50 px-3 py-2 text-sm text-red-700">
-                {err}
+            {!isEmpty && (
+              <div className="text-right text-[11px] text-slate-500">
+                Đang có{' '}
+                <span className="font-semibold text-slate-900">
+                  {totalQty}
+                </span>{' '}
+                sản phẩm · Tạm tính{' '}
+                <span className="font-semibold text-slate-900">
+                  {formatVND(subtotal)}
+                </span>
               </div>
             )}
+          </div>
+        </header>
 
-            <button
-              type="button"
-              onClick={onCheckout}
-              disabled={loading || items.length === 0}
-              className="inline-flex h-11 w-full items-center justify-center rounded-lg bg-black text-white disabled:opacity-50 hover:opacity-90"
-            >
-              {loading ? 'Đang tạo phiên thanh toán…' : 'Tiến hành thanh toán'}
-            </button>
+        {/* Empty state */}
+        {isEmpty ? (
+          <section className="rounded-2xl border border-dashed border-slate-200 bg-white py-10 px-6 text-center space-y-3">
+            <div className="text-4xl">🍄</div>
+            <p className="text-sm text-slate-600">
+              Giỏ hàng của bạn đang trống.
+            </p>
+            <p className="text-[11px] text-slate-500">
+              Khám phá các loại nấm tươi, khô, dược liệu với nguồn gốc rõ ràng
+              và giao hàng nhanh chóng.
+            </p>
+            <div className="mt-2 flex justify-center gap-3">
+              <Link
+                href="/products"
+                className="inline-flex h-10 items-center rounded-xl bg-slate-900 px-5 text-[12px] font-medium text-white hover:bg-emerald-700 transition-colors"
+              >
+                Mua sắm ngay
+              </Link>
+              <Link
+                href="/"
+                className="inline-flex h-10 items-center rounded-xl border border-slate-200 px-4 text-[11px] text-slate-600 hover:bg-slate-50"
+              >
+                Về trang chủ
+              </Link>
+            </div>
+          </section>
+        ) : (
+          // Cart content
+          <section className="grid grid-cols-1 lg:grid-cols-3 gap-6 items-start">
+            {/* Left: items */}
+            <div className="lg:col-span-2 space-y-3">
+              {items.map((it) => (
+                <div
+                  key={it.sku}
+                  className="rounded-2xl border border-slate-100 bg-white/80 backdrop-blur px-4 py-3 shadow-sm flex flex-col"
+                >
+                  <CartItemRow
+                    item={it}
+                    onChangeQty={(q) => setQty(it.sku, q)}
+                    onRemove={() => removeItem(it.sku)}
+                  />
+                </div>
+              ))}
 
-            <p className="text-xs text-gray-500">Phí vận chuyển tính ở bước sau.</p>
-          </aside>
-        </div>
-      )}
+              <button
+                type="button"
+                onClick={clear}
+                className="inline-flex items-center gap-1 text-[11px] text-slate-500 hover:text-red-500 hover:underline"
+              >
+                ✕ Xoá tất cả
+              </button>
+            </div>
+
+            {/* Right: summary */}
+            <aside className="rounded-2xl border border-slate-100 bg-white/90 backdrop-blur px-5 py-5 shadow-sm space-y-4 h-fit">
+              <div className="flex items-center justify-between gap-2">
+                <div className="text-xs text-slate-500">Tổng số lượng</div>
+                <div className="text-sm font-semibold text-slate-900">
+                  {totalQty}
+                </div>
+              </div>
+
+              <div className="border-t border-slate-100 pt-3 space-y-2 text-sm">
+                <div className="flex justify-between">
+                  <span className="text-slate-600">Tạm tính</span>
+                  <span className="font-semibold text-slate-900">
+                    {formatVND(subtotal)}
+                  </span>
+                </div>
+                <div className="flex justify-between text-[11px] text-slate-400">
+                  <span>Giảm giá</span>
+                  <span>0₫</span>
+                </div>
+                <div className="flex justify-between text-[11px] text-slate-400">
+                  <span>Vận chuyển (ước tính)</span>
+                  <span>Tính ở bước sau</span>
+                </div>
+              </div>
+
+              {err && (
+                <div className="rounded-xl border border-red-200 bg-red-50 px-3 py-2 text-[11px] text-red-700">
+                  {err}
+                </div>
+              )}
+
+              <button
+                type="button"
+                onClick={onCheckout}
+                disabled={loading || isEmpty}
+                className="mt-1 inline-flex h-11 w-full items-center justify-center rounded-xl bg-slate-900 text-[13px] font-medium text-white hover:bg-emerald-700 disabled:opacity-50 disabled:cursor-not-allowed transition-colors"
+              >
+                {loading
+                  ? 'Đang tạo phiên thanh toán…'
+                  : 'Tiến hành thanh toán'}
+              </button>
+
+              <p className="text-[10px] text-slate-400 leading-relaxed">
+                Phí vận chuyển và thông tin nhận hàng sẽ được xác nhận ở bước tiếp
+                theo. Thanh toán an toàn qua Stripe Sandbox.
+              </p>
+            </aside>
+          </section>
+        )}
+      </div>
     </main>
   );
 }

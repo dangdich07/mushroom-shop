@@ -2,6 +2,7 @@
 
 import { useState } from 'react';
 import { useRouter } from 'next/navigation';
+import BackButton from '../../components/BackButton';
 
 export default function NewCategoryPage() {
   const router = useRouter();
@@ -11,59 +12,83 @@ export default function NewCategoryPage() {
     slug: '',
     description: '',
     sortOrder: 0,
-    active: true
+    active: true,
   });
 
   const handleSubmit = async (e: React.FormEvent) => {
     e.preventDefault();
+    if (!formData.name || !formData.slug) return;
     setLoading(true);
 
     try {
-      const response = await fetch(`${process.env.NEXT_PUBLIC_API_URL}/categories`, {
-        method: 'POST',
-        headers: {
-          'Content-Type': 'application/json',
-        },
-        body: JSON.stringify(formData),
-                credentials: 'include',
+      const res = await fetch(
+        `${process.env.NEXT_PUBLIC_API_URL}/categories`,
+        {
+          method: 'POST',
+          headers: { 'Content-Type': 'application/json' },
+          credentials: 'include',
+          body: JSON.stringify(formData),
+        }
+      );
 
-      });
-
-      if (response.ok) {
+      if (res.ok) {
         router.push('/categories');
       } else {
-        const error = await response.json();
-        alert(`Lỗi: ${error.error?.message || 'Không thể tạo danh mục'}`);
+        const error = await res.json().catch(() => ({}));
+        alert(
+          `Lỗi: ${error?.error?.message || 'Không thể tạo danh mục'}`
+        );
       }
-    } catch (error) {
+    } catch {
       alert('Lỗi kết nối đến server');
     } finally {
       setLoading(false);
     }
   };
 
-  const handleInputChange = (e: React.ChangeEvent<HTMLInputElement | HTMLTextAreaElement>) => {
+  const handleInputChange = (
+    e: React.ChangeEvent<HTMLInputElement | HTMLTextAreaElement>
+  ) => {
     const { name, value, type } = e.target;
     setFormData(prev => ({
       ...prev,
-      [name]: type === 'checkbox' ? (e.target as HTMLInputElement).checked : 
-              type === 'number' ? Number(value) : value
+      [name]:
+        type === 'checkbox'
+          ? (e.target as HTMLInputElement).checked
+          : type === 'number'
+          ? Number(value)
+          : value,
     }));
   };
 
   return (
-    <div className="space-y-6">
-      <div>
-        <h1 className="text-2xl font-bold text-gray-900">Thêm danh mục mới</h1>
-        <p className="text-gray-600">Tạo danh mục mới để tổ chức sản phẩm</p>
-      </div>
+    <div className="mx-auto max-w-4xl space-y-6">
+      <BackButton label="Quay lại danh sách" />
 
-      <form onSubmit={handleSubmit} className="bg-white rounded-lg shadow p-6 space-y-6">
-        <div className="grid grid-cols-1 md:grid-cols-2 gap-6">
-          {/* Tên danh mục */}
+      {/* Header */}
+      <header className="space-y-2">
+        <div className="inline-flex items-center gap-2 rounded-full bg-emerald-50 px-3 py-1 text-[11px] text-emerald-700">
+          <span className="text-xs">📁</span>
+          <span>Tạo danh mục mới cho sản phẩm</span>
+        </div>
+        <h1 className="text-2xl font-bold text-slate-900">
+          Thêm danh mục mới
+        </h1>
+        <p className="text-sm text-slate-600">
+          Điền thông tin rõ ràng để giúp khách hàng duyệt sản phẩm dễ hơn.
+        </p>
+      </header>
+
+      {/* Form card */}
+      <form
+        onSubmit={handleSubmit}
+        className="space-y-6 rounded-2xl bg-white p-6 shadow-sm ring-1 ring-slate-100"
+      >
+        <div className="grid gap-6 md:grid-cols-2">
+          {/* Tên */}
           <div>
-            <label className="block text-sm font-medium text-gray-700 mb-2">
-              Tên danh mục *
+            <label className="mb-1.5 block text-sm font-medium text-slate-800">
+              Tên danh mục <span className="text-rose-500">*</span>
             </label>
             <input
               type="text"
@@ -71,15 +96,15 @@ export default function NewCategoryPage() {
               value={formData.name}
               onChange={handleInputChange}
               required
-              className="w-full border border-gray-300 rounded-lg px-3 py-2 focus:ring-2 focus:ring-green-500 focus:border-green-500"
               placeholder="Ví dụ: Nấm tươi"
+              className="w-full rounded-xl border border-slate-200 px-3 py-2.5 text-sm text-slate-900 placeholder:text-slate-400 focus:border-emerald-500 focus:outline-none focus:ring-2 focus:ring-emerald-100"
             />
           </div>
 
           {/* Slug */}
           <div>
-            <label className="block text-sm font-medium text-gray-700 mb-2">
-              Slug *
+            <label className="mb-1.5 block text-sm font-medium text-slate-800">
+              Slug URL <span className="text-rose-500">*</span>
             </label>
             <input
               type="text"
@@ -87,16 +112,22 @@ export default function NewCategoryPage() {
               value={formData.slug}
               onChange={handleInputChange}
               required
-              className="w-full border border-gray-300 rounded-lg px-3 py-2 focus:ring-2 focus:ring-green-500 focus:border-green-500"
               placeholder="Ví dụ: nam-tuoi"
+              className="w-full rounded-xl border border-slate-200 px-3 py-2.5 text-sm text-slate-900 placeholder:text-slate-400 focus:border-emerald-500 focus:outline-none focus:ring-2 focus:ring-emerald-100"
             />
-            <p className="text-xs text-gray-500 mt-1">URL sẽ là: /categories/{formData.slug}</p>
+            <p className="mt-1 text-xs text-slate-500">
+              URL xem danh mục sẽ là:
+              <span className="font-mono">
+                {' '}
+                /categories/{formData.slug || 'ten-danh-muc'}
+              </span>
+            </p>
           </div>
         </div>
 
         {/* Mô tả */}
         <div>
-          <label className="block text-sm font-medium text-gray-700 mb-2">
+          <label className="mb-1.5 block text-sm font-medium text-slate-800">
             Mô tả
           </label>
           <textarea
@@ -104,76 +135,83 @@ export default function NewCategoryPage() {
             value={formData.description}
             onChange={handleInputChange}
             rows={3}
-            className="w-full border border-gray-300 rounded-lg px-3 py-2 focus:ring-2 focus:ring-green-500 focus:border-green-500"
-            placeholder="Mô tả về danh mục này..."
+            placeholder="Mô tả ngắn để team & khách hiểu danh mục này dùng cho gì..."
+            className="w-full rounded-xl border border-slate-200 px-3 py-2.5 text-sm text-slate-900 placeholder:text-slate-400 focus:border-emerald-500 focus:outline-none focus:ring-2 focus:ring-emerald-100"
           />
         </div>
 
-        <div className="grid grid-cols-1 md:grid-cols-2 gap-6">
-          {/* Thứ tự sắp xếp */}
+        {/* Sort + Active */}
+        <div className="grid gap-6 md:grid-cols-2">
           <div>
-            <label className="block text-sm font-medium text-gray-700 mb-2">
-              Thứ tự sắp xếp
+            <label className="mb-1.5 block text-sm font-medium text-slate-800">
+              Thứ tự hiển thị
             </label>
             <input
               type="number"
               name="sortOrder"
+              min={0}
               value={formData.sortOrder}
               onChange={handleInputChange}
-              min="0"
-              className="w-full border border-gray-300 rounded-lg px-3 py-2 focus:ring-2 focus:ring-green-500 focus:border-green-500"
-              placeholder="0"
+              className="w-full rounded-xl border border-slate-200 px-3 py-2.5 text-sm text-slate-900 focus:border-emerald-500 focus:outline-none focus:ring-2 focus:ring-emerald-100"
             />
-            <p className="text-xs text-gray-500 mt-1">Số càng nhỏ càng hiển thị trước</p>
+            <p className="mt-1 text-xs text-slate-500">
+              Số càng nhỏ, danh mục càng xuất hiện ở trên.
+            </p>
           </div>
 
-          {/* Trạng thái */}
           <div>
-            <label className="block text-sm font-medium text-gray-700 mb-2">
+            <label className="mb-1.5 block text-sm font-medium text-slate-800">
               Trạng thái
             </label>
-            <div className="flex items-center">
+            <label className="inline-flex items-center gap-2 rounded-full bg-emerald-50 px-3 py-2 text-xs font-medium text-emerald-800">
               <input
                 type="checkbox"
                 name="active"
                 checked={formData.active}
                 onChange={handleInputChange}
-                className="mr-2"
+                className="h-4 w-4 rounded border-emerald-400 text-emerald-600 focus:ring-emerald-500"
               />
-              <span className="text-sm font-medium text-gray-700">Hoạt động</span>
-            </div>
+              <span>Hoạt động ngay sau khi tạo</span>
+            </label>
           </div>
         </div>
 
         {/* Preview */}
-        <div className="bg-gray-50 rounded-lg p-4">
-          <h3 className="text-sm font-medium text-gray-700 mb-2">Xem trước:</h3>
-          <div className="bg-white border rounded-lg p-3">
-            <div className="font-medium text-gray-900">{formData.name || 'Tên danh mục'}</div>
+        <div className="rounded-2xl bg-slate-50 p-4">
+          <h3 className="mb-2 text-xs font-semibold uppercase tracking-wide text-slate-500">
+            Xem trước hiển thị
+          </h3>
+          <div className="flex flex-col gap-1 rounded-xl border border-dashed border-slate-200 bg-white px-4 py-3 text-sm">
+            <div className="font-semibold text-slate-900">
+              {formData.name || 'Tên danh mục'}
+            </div>
             {formData.description && (
-              <div className="text-sm text-gray-600 mt-1">{formData.description}</div>
+              <div className="text-xs text-slate-600">
+                {formData.description}
+              </div>
             )}
-            <div className="text-xs text-gray-500 mt-1">
-              Slug: {formData.slug || 'slug-danh-muc'} | Thứ tự: {formData.sortOrder}
+            <div className="text-[10px] text-slate-400">
+              Slug: {formData.slug || 'slug-danh-muc'} · Thứ tự:{' '}
+              {formData.sortOrder}
             </div>
           </div>
         </div>
 
         {/* Buttons */}
-        <div className="flex justify-end space-x-4 pt-6 border-t">
+        <div className="flex justify-end gap-3 border-t border-slate-100 pt-5">
           <button
             type="button"
             onClick={() => router.back()}
-            className="px-4 py-2 border border-gray-300 rounded-lg text-gray-700 hover:bg-gray-50"
+            className="inline-flex items-center gap-2 rounded-full border border-slate-200 px-4 py-2 text-xs font-medium text-slate-700 hover:bg-slate-50"
           >
             Hủy
           </button>
           <button
             type="submit"
             disabled={loading}
-            className="px-6 py-2 bg-green-600 text-white rounded-lg hover:bg-green-700 disabled:opacity-50"
+            className="inline-flex items-center gap-2 rounded-full bg-emerald-600 px-6 py-2 text-xs font-semibold text-white shadow-sm hover:bg-emerald-500 hover:shadow disabled:cursor-not-allowed disabled:opacity-60"
           >
-            {loading ? 'Đang tạo...' : 'Tạo danh mục'}
+            {loading ? 'Đang tạo…' : 'Tạo danh mục'}
           </button>
         </div>
       </form>

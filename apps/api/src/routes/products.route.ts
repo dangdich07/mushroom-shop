@@ -13,6 +13,11 @@
     getProductsByCategory
   } from '../controllers/product.controller';
 
+  import {
+  addSkusForProduct,
+  toggleSkuActive,
+  deleteSku
+} from '../controllers/skus.controller';
   const router = Router();
 
   // Public routes
@@ -30,5 +35,10 @@
   router.post('/', requireAuth, requireRole('admin'), createProduct);
   router.put('/:id', requireAuth, requireRole('admin'), updateProduct);
   router.delete('/:id', requireAuth, requireRole('admin'), deleteProduct);
+  
+       // (để trang edit liệt kê)
+router.post('/:id/skus', addSkusForProduct);        // thêm nhiều SKU
+router.patch('/:id/skus/:skuId/active', toggleSkuActive);
+router.delete('/:id/skus/:skuId', deleteSku);
 
   export default router;

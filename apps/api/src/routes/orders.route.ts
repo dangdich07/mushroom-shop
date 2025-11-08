@@ -1,23 +1,54 @@
+// apps/api/src/routes/orders.route.ts
 import { Router } from 'express';
-import { createCheckoutSession, getOrder, getMyOrders, listMyOrders  } from '../controllers/order.controller';
-import { stripeWebhook } from '../controllers/webhook.controller';
+import {
+  createCheckoutSession,
+  getOrder,
+  getMyOrders,
+  listMyOrders,
+  createCheckoutForOrder,
+  checkoutExistingOrder,
+  adminListOrders,
+  adminGetOrder,
+  adminUpdateOrderStatus,
+} from '../controllers/order.controller';
 import { requireAuth } from '../middlewares/auth';
 
 const router = Router();
 
-// Checkout: bắt buộc đăng nhập để có req.user.id
+/**
+ * PUBLIC / USER ROUTES (cần đăng nhập)
+ */
+
+// Checkout từ giỏ hàng → tạo order + stripe session
 router.post('/checkout/session', requireAuth, createCheckoutSession);
 
-// Stripe webhook (raw body đã cấu hình ở app.ts)
-router.post('/webhooks/stripe', stripeWebhook);
-
-// Đơn của tôi (theo userId)
+// Đơn của chính user
 router.get('/orders/my', requireAuth, getMyOrders);
+router.get('/orders/me', requireAuth, listMyOrders);
 
-// Xem chi tiết 1 đơn (chỉ cho chủ sở hữu)
+// Xem chi tiết đơn (chỉ chủ đơn)
 router.get('/orders/:id', requireAuth, getOrder);
 
-// ✨ mới: danh sách đơn của tôi
-router.get('/orders/me', requireAuth, listMyOrders);
+// Thanh toán lại cho chính order (không tạo order mới)
+router.post('/orders/:id/checkout', requireAuth, createCheckoutForOrder);
+
+// Sử dụng nếu cần cho flow cũ
+router.post(
+  '/orders/:id/checkout-existing',
+  requireAuth,
+  checkoutExistingOrder,
+);
+
+/**
+ * ADMIN ROUTES
+ * prefix: /admin/orders...
+ */
+router.get('/admin/orders', requireAuth, adminListOrders);
+router.get('/admin/orders/:id', requireAuth, adminGetOrder);
+router.patch(
+  '/admin/orders/:id/status',
+  requireAuth,
+  adminUpdateOrderStatus,
+);
 
 export default router;

@@ -46,12 +46,60 @@ export async function reserveStockAndCreateOrder(userId: string | undefined, inc
   }
 }
 
-export async function markOrderPaidByPaymentIntent(paymentIntentId: string, idemKey?: string) {
-  const order = await OrderModel.findOne({ $or: [ { 'payment.id': paymentIntentId }, idemKey ? { idempotencyKey: idemKey } : { _id: null } ] });
-  if (!order) return null;
-  if (order.status === 'paid') return order;
+export async function markOrderPaidByPaymentIntent(
+  paymentIntentId: string,
+  idemKey?: string,
+  orderIdFromMeta?: string | null
+) {
+  if (!paymentIntentId && !idemKey && !orderIdFromMeta) {
+    // Không đủ dữ liệu, bỏ qua nhẹ nhàng
+    return null;
+  }
+
+  const or: any[] = [];
+
+  if (paymentIntentId) {
+    or.push({ 'payment.id': paymentIntentId });
+  }
+
+  if (idemKey) {
+    or.push({ idempotencyKey: idemKey });
+  }
+
+  if (orderIdFromMeta) {
+    try {
+      or.push({ _id: new mongoose.Types.ObjectId(orderIdFromMeta) });
+    } catch {
+      // orderIdFromMeta không hợp lệ, bỏ qua
+    }
+  }
+
+  if (!or.length) return null;
+
+  const order = await OrderModel.findOne({ $or: or });
+
+  if (!order) {
+    // Đổi sang log nhẹ cho debug, không phải lỗi hệ thống
+    console.log('[markOrderPaidByPaymentIntent] No matching order for', {
+      paymentIntentId,
+      idemKey,
+      orderIdFromMeta,
+    });
+    return null;
+  }
+
+  if (order.status === 'paid') {
+    // Đã xử lý trước đó (idempotent)
+    return order;
+  }
+
   order.status = 'paid';
-  order.payment.status = 'succeeded';
+  order.payment = {
+    ...(order.payment || { provider: 'stripe' }),
+    id: paymentIntentId || order.payment?.id || null,
+    status: 'succeeded',
+  };
+
   await order.save();
   return order;
 }

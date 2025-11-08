@@ -10,6 +10,15 @@ export default function ProductCard({
   categoryName?: string;
   cta?: React.ReactNode;
 }) {
+  // CHỈNH: Ưu tiên giá từ firstSku.price (do BE đã chọn biến thể hợp lệ/in-stock),
+  // sau đó mới tới priceRange.min, rồi mới fallback skus[0]?.price
+  const displayPrice: number | undefined =
+    (typeof p?.firstSku?.price === 'number' ? p.firstSku.price : undefined) ??
+    (typeof p?.priceRange?.min === 'number' ? p.priceRange.min : undefined) ??
+    (Array.isArray(p?.skus) && typeof p.skus[0]?.price === 'number'
+      ? p.skus[0].price
+      : undefined);
+
   return (
     <div className="group h-full rounded-2xl border bg-white p-4 hover:shadow-sm transition flex flex-col">
       {/* image */}
@@ -39,9 +48,9 @@ export default function ProductCard({
 
         <div className="flex items-center gap-2 pt-1">
           {p.featured && <Badge>⭐ Nổi bật</Badge>}
-          {typeof p.price === 'number' && (
+          {typeof displayPrice === 'number' && (
             <span className="text-sm font-medium text-gray-900">
-              {p.price.toLocaleString('vi-VN')} ₫
+              {displayPrice.toLocaleString('vi-VN')} ₫
             </span>
           )}
         </div>
