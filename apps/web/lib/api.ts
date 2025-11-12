@@ -75,15 +75,42 @@ export async function createCheckoutSession(
     method: 'POST',
     headers: {
       'Content-Type': 'application/json',
-      'Idempotency-Key': idem || crypto.randomUUID(),
+      'Idempotency-Key':
+        idem ||
+        (typeof crypto !== 'undefined' && 'randomUUID' in crypto
+          ? crypto.randomUUID()
+          : String(Date.now())),
     },
     body: JSON.stringify({ items }),
     credentials: 'include',
   });
 
+  // Đọc raw text đúng 1 lần, rồi tự xử lý
+  const ct = res.headers.get('content-type') || '';
+  const raw = await res.text();
+
   if (!res.ok) {
-    const text = await res.text().catch(() => '');
-    throw new Error(`HTTP ${res.status} - ${text}`);
+    throw new Error(`HTTP ${res.status}: ${raw.slice(0, 300)}`);
   }
-  return res.json() as Promise<{ id: string; url: string; orderId?: string }>;
+
+  // 1) Trường hợp chuẩn (JSON)
+  const trimmed = raw.trim();
+  if (ct.includes('application/json') || trimmed.startsWith('{') || trimmed.startsWith('[')) {
+    return JSON.parse(trimmed) as { id?: string; url?: string; orderId?: string };
+  }
+
+  // 2) Backend/proxy trả URL dạng text/plain → vẫn xử lý được
+  if (/^https?:\/\//i.test(trimmed)) {
+    return { url: trimmed } as { id?: string; url?: string; orderId?: string };
+  }
+
+  // 3) HTML (404/redirect/login) → báo lỗi rõ ràng
+  if (trimmed.startsWith('<')) {
+    throw new Error(
+      'Backend trả HTML thay vì JSON (có thể 404/redirect/login). Kiểm tra log dịch vụ API trên Render.'
+    );
+  }
+
+  // 4) Fallback
+  throw new Error(`Phản hồi không phải JSON: ${trimmed.slice(0, 300)}`);
 }
