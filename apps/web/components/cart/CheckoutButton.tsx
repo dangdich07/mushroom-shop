@@ -25,7 +25,7 @@ export default function CheckoutButton() {
     setLoading(true);
     try {
       // Gọi endpoint thật. Backend trả { id, url, orderId? }
-      const { url, orderId } = await createCheckoutSession(lineItems, undefined, session ?? null);
+      const { url, orderId } = await createCheckoutSession(lineItems, undefined,);
 
       // Lưu lại orderId (để trang success dùng khi cổng thanh toán không trả query)
       if (orderId) {

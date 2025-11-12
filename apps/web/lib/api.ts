@@ -69,35 +69,21 @@ export async function getJSON<T>(path: string, sessionOrInit?: Session | Request
 
 export async function createCheckoutSession(
   items: { sku: string; qty: number }[],
-  idem?: string,
-  session?: Session | null
+  idem?: string
 ) {
-  const url = buildUrl('/checkout/session');
-
-  // Lấy access token từ NextAuth session nếu có
-  const accessToken =
-    session && (session as any).accessToken
-      ? String((session as any).accessToken)
-      : '';
-
-  const headers: Record<string, string> = {
-    'Content-Type': 'application/json',
-    'Idempotency-Key': idem || safeIdemKey(),
-  };
-  if (accessToken) headers['Authorization'] = `Bearer ${accessToken}`;
-
-  const res = await fetch(url, {
+  const res = await fetch('/api/backend/checkout/session', {
     method: 'POST',
-    headers,
+    headers: {
+      'Content-Type': 'application/json',
+      'Idempotency-Key': idem || crypto.randomUUID(),
+    },
     body: JSON.stringify({ items }),
     credentials: 'include',
-    cache: 'no-store',
   });
 
   if (!res.ok) {
     const text = await res.text().catch(() => '');
-    throw new Error(`HTTP ${res.status} - ${url}\n${text}`);
+    throw new Error(`HTTP ${res.status} - ${text}`);
   }
-
   return res.json() as Promise<{ id: string; url: string; orderId?: string }>;
 }
