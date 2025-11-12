@@ -9,8 +9,7 @@ export interface SessionLike {
 }
 
 /**
- * 🔹 API_BASE: mặc định trỏ tới `/api` để đi qua middleware proxy
- *   (localhost:3001 → localhost:4000)
+ * 🔹 API_BASE: vẫn giữ cho tương thích cũ, nhưng buildUrl mới là nơi quyết định cuối cùng.
  */
 export const API_BASE =
   process.env.NEXT_PUBLIC_API_URL?.replace(/\/$/, '') || '/api';
@@ -22,22 +21,47 @@ const SESSION_COOKIE_NAME =
 
 /**
  * 🧠 Tạo URL tuyệt đối an toàn cho cả server + client
+ * Ưu tiên:
+ * 1. NEXT_PUBLIC_API_ABSOLUTE_URL (https://mushroom-shop.onrender.com)
+ * 2. NEXT_PUBLIC_API_URL nếu là absolute URL
+ * 3. NEXT_PUBLIC_API_URL nếu là relative (/api)
+ * 4. Fallback localhost (cho dev)
  */
 function buildUrl(path: string) {
-  const isServer = typeof window === 'undefined';
   const cleanPath = path.startsWith('/') ? path : `/${path}`;
 
-  if (isServer) {
-    // Dành cho SSR — cần URL tuyệt đối
-    const base =
-      process.env.NEXT_PUBLIC_API_ABSOLUTE_URL ||
-      'http://localhost:4000'; // backend thật
-    // Đảm bảo luôn có dấu `/` giữa base và path
-    return `${base}${cleanPath.replace(/^\/api/, '')}`;
+  const absFromEnv =
+    (process.env.NEXT_PUBLIC_API_ABSOLUTE_URL || '').trim().replace(/\/$/, '');
+  const apiUrl = (process.env.NEXT_PUBLIC_API_URL || '').trim();
+
+  const absApiUrl = apiUrl.startsWith('http')
+    ? apiUrl.replace(/\/$/, '')
+    : '';
+
+  const relApiUrl = !apiUrl.startsWith('http')
+    ? apiUrl.replace(/\/$/, '')
+    : '';
+
+  // Nếu có absolute URL (Render hoặc localhost) → dùng thẳng cho mọi nơi
+  const absoluteBase =
+    absFromEnv || absApiUrl || '';
+
+  if (absoluteBase) {
+    return `${absoluteBase}${cleanPath.replace(/^\/api/, '')}`;
   }
 
-  // Dành cho client — gọi qua proxy Next.js
-  return `/api${cleanPath.replace(/^\/api/, '')}`;
+  // Không có absolute → server fallback localhost:4000
+  if (typeof window === 'undefined') {
+    const fallback = 'http://localhost:4000';
+    return `${fallback}${cleanPath.replace(/^\/api/, '')}`;
+  }
+
+  // Client: nếu có base tương đối /api thì dùng, không thì path gốc
+  if (relApiUrl) {
+    return `${relApiUrl}${cleanPath}`;
+  }
+
+  return cleanPath;
 }
 
 /**
@@ -89,9 +113,9 @@ export async function getJSON<T>(
   const fullUrl = buildUrl(path);
   const res = await fetch(fullUrl, requestInit);
   if (!res.ok) {
-  const text = await res.text();
-  throw new Error(`HTTP ${res.status} - ${fullUrl}\n${text}`);
-}
+    const text = await res.text();
+    throw new Error(`HTTP ${res.status} - ${fullUrl}\n${text}`);
+  }
   return res.json();
 }
 
@@ -114,9 +138,9 @@ export async function createCheckoutSession(
   });
 
   if (!res.ok) {
-  const text = await res.text();
-  throw new Error(`HTTP ${res.status} - ${fullUrl}\n${text}`);
-}
+    const text = await res.text();
+    throw new Error(`HTTP ${res.status} - ${fullUrl}\n${text}`);
+  }
   return res.json() as Promise<{ id: string; url: string; orderId?: string }>;
 }
 
@@ -135,7 +159,7 @@ export async function deleteJSON(url: string, options: RequestInit = {}) {
   });
   if (!res.ok) throw new Error(`DELETE ${url} failed`);
   if (res.status === 204) return null;
-    return res.json();
+  return res.json();
 }
 
 /**

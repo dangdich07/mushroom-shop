@@ -1,22 +1,19 @@
 // apps/api/src/app.ts
+import { stripeWebhook } from './controllers/webhook.controller';
 import express from 'express';
 import 'dotenv/config';
 import cookieParser from 'cookie-parser';
 import mongoose from 'mongoose';
 
-import { stripeWebhook } from './controllers/webhook.controller';
 import { mongoStateLabel } from './utils/mongo-state';
+import { applySecurity } from './middlewares/security';
 
 import authRoutes from './routes/auth.route';
 import orderRoutes from './routes/orders.route';
 import productsRoutes from './routes/products.route';
 import categoriesRoutes from './routes/categories.route';
 
-// Security libs
-import helmet from 'helmet';
-import cors from 'cors';
-import compression from 'compression';
-import rateLimit from 'express-rate-limit';
+
 
 const app = express();
 
@@ -27,13 +24,12 @@ const app = express();
  */
 app.post(
   '/webhooks/stripe',
-  express.raw({ type: '*/*' }),
+  express.raw({ type: '*/*' }), // giữ nguyên Buffer, không parse JSON
   (req: any, _res, next) => {
-    // Lưu raw body để stripeWebhook verify signature
-    req.rawBody = req.body;
+    req.rawBody = req.body;     // Buffer này dùng trong stripeWebhook
     next();
   },
-  stripeWebhook,
+  stripeWebhook                    // ⬅️ gọi thẳng controller ở đây
 );
 
 /**
@@ -82,70 +78,17 @@ app.get('/health', async (_req, res) => {
   });
 });
 
-/* ================================
- * Security middlewares (global)
- * ==============================*/
-
-// Ẩn "X-Powered-By: Express"
-app.disable('x-powered-by');
-
-// Helmet: header bảo mật cơ bản
-app.use(
-  helmet({
-    crossOriginEmbedderPolicy: false,
-    crossOriginResourcePolicy: { policy: 'cross-origin' },
-  }),
-);
-
-// Nén response
-app.use(compression());
-
-// CORS: chỉ cho phép origin tin cậy
-const allowedOrigins = (
-  process.env.ALLOWED_ORIGINS ||
-  'http://localhost:3000,http://localhost:3001'
-)
-  .split(',')
-  .map((x) => x.trim())
-  .filter(Boolean);
-
-app.use(
-  cors({
-    origin(origin, cb) {
-      // Cho request không có Origin (curl, health check)
-      if (!origin) return cb(null, true);
-      if (allowedOrigins.includes(origin)) return cb(null, true);
-      return cb(new Error('Not allowed by CORS'));
-    },
-    credentials: true,
-  }),
-);
-
-// Rate limit chung (chống spam)
-const globalLimiter = rateLimit({
-  windowMs: 15 * 60 * 1000, // 15 phút
-  max: 1000, // mỗi IP tối đa 1000 request / 15 phút
-  standardHeaders: true,
-  legacyHeaders: false,
-});
-app.use(globalLimiter);
-
-// Rate limit chặt hơn cho auth (nếu có)
-const authLimiter = rateLimit({
-  windowMs: 10 * 60 * 1000,
-  max: 20,
-});
-app.use('/auth', authLimiter);
-
-/* ================================
- * Parsers
- * ==============================*/
+/**
+ * Security middlewares (helmet / cors / rate-limit / v.v.).
+ * Có thể chứa express.json, nhưng ta sẽ chặn cho /webhooks/stripe bên dưới.
+ */
+applySecurity(app);
 
 app.use(cookieParser());
 
 /**
  * JSON parser CHO MỌI ROUTE TRỪ /webhooks/stripe
- * (tránh làm hỏng raw body mà Stripe cần)
+ * → tránh phá rawBody mà Stripe cần.
  */
 app.use((req, res, next) => {
   if (req.originalUrl === '/webhooks/stripe') {
@@ -154,35 +97,12 @@ app.use((req, res, next) => {
   return express.json()(req, res, next);
 });
 
-/* ================================
+/**
  * Application routes
- * ==============================*/
-
+ */
 app.use('/auth', authRoutes);
 app.use('/products', productsRoutes);
 app.use('/categories', categoriesRoutes);
 app.use('/', orderRoutes);
-
-/* ================================
- * Error handler chung (ẩn stack)
- * ==============================*/
-
-// eslint-disable-next-line @typescript-eslint/no-unused-vars
-app.use((err: any, _req: express.Request, res: express.Response, _next: express.NextFunction) => {
-  console.error(err);
-
-  const status = err.status || 500;
-
-  res.status(status).json({
-    error: {
-      code: err.code || 'INTERNAL_ERROR',
-      message:
-        status === 500
-          ? 'Có lỗi xảy ra, vui lòng thử lại sau.'
-          : err.message || 'Request không hợp lệ.',
-      traceId: (res.locals && res.locals.traceId) || undefined,
-    },
-  });
-});
 
 export default app;
