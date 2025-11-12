@@ -1,68 +1,48 @@
-// apps/web/app/api/backend/[...path]/route.ts
+import type { NextRequest } from 'next/server';
 import { NextResponse } from 'next/server';
 
-export const runtime = 'nodejs';
 export const dynamic = 'force-dynamic';
+export const revalidate = 0;
 
-// API base ưu tiên server-only, fallback public var
-const API_BASE =
-  (process.env.API_ABSOLUTE_URL ||
-    process.env.NEXT_PUBLIC_API_ABSOLUTE_URL ||
-    'http://localhost:4000'
-  ).replace(/\/$/, '');
+// Lấy URL API từ env (không còn fallback localhost trong production)
+const API_BASE = (
+  process.env.API_ABSOLUTE_URL ||
+  process.env.NEXT_PUBLIC_API_ABSOLUTE_URL ||
+  ''
+).replace(/\/+$/, ''); // bỏ dấu / cuối
 
-async function handler(req: Request, ctx: { params: { path: string[] } }) {
-  if (!API_BASE.startsWith('http')) {
-    return NextResponse.json(
-      { error: 'API_ABSOLUTE_URL is missing/invalid' },
-      { status: 500 },
-    );
-  }
-
-  const { path } = ctx.params;
-  const reqUrl = new URL(req.url);
-  const target = new URL(`${API_BASE}/${path.join('/')}`);
-  target.search = reqUrl.search; // giữ query string
-
-  // Copy headers, bỏ host
-  const headers = new Headers(req.headers);
-  headers.delete('host');
-
-  // Chuẩn bị body cho các method có body
-  const method = req.method.toUpperCase();
-  const hasBody = !['GET', 'HEAD'].includes(method);
-  const init: RequestInit = { method, headers };
-  if (hasBody) init.body = await req.arrayBuffer();
-
-  // Gọi API thật
-  const upstream = await fetch(target.toString(), {
-    ...init,
-    redirect: 'manual',
-  });
-
-  // Stream body + header về client
-  const res = new NextResponse(upstream.body, {
-    status: upstream.status,
-  });
-
-  // Copy các header cần thiết
-  upstream.headers.forEach((v, k) => {
-    // tránh set trùng hoặc các hop-by-hop
-    if (!['content-length', 'transfer-encoding', 'connection'].includes(k)) {
-      res.headers.set(k, v);
-    }
-  });
-
-  // ⚠️ Chuyển tiếp cookie về đúng host (xóa Domain; đổi SameSite nếu cần)
-  const setCookie = upstream.headers.get('set-cookie');
-  if (setCookie) {
-    const rewritten = setCookie
-      .replace(/Domain=[^;]+;?\s*/gi, '') // để cookie gắn vào host hiện tại (web)
-      .replace(/;\s*SameSite=None/gi, '; SameSite=Lax'); // an toàn hơn nếu không cần cross-site
-    res.headers.set('set-cookie', rewritten);
-  }
-
-  return res;
+if (!API_BASE) {
+  console.warn('[backend-proxy] Missing API_ABSOLUTE_URL. Set it on Render!');
 }
 
-export { handler as GET, handler as POST, handler as PUT, handler as PATCH, handler as DELETE, handler as OPTIONS };
+async function proxy(req: NextRequest, ctx: { params: { path?: string[] } }) {
+  const segments = ctx.params.path ?? [];
+  const target = `${API_BASE}/${segments.join('/')}${req.nextUrl.search}`;
+
+  const init: RequestInit = {
+    method: req.method,
+    // giữ cookie để phiên đăng nhập backend hoạt động
+    headers: {
+      cookie: req.headers.get('cookie') ?? '',
+      // chuyển tiếp content-type nếu có
+      ...(req.headers.get('content-type')
+        ? { 'content-type': req.headers.get('content-type') as string }
+        : {}),
+    },
+    body:
+      req.method === 'GET' || req.method === 'HEAD'
+        ? undefined
+        : Buffer.from(await req.arrayBuffer()),
+    // không cache
+    cache: 'no-store',
+  };
+
+  const res = await fetch(target, init);
+
+  // Trả thẳng body/headers/status về cho client
+  const headers = new Headers(res.headers);
+  headers.delete('content-encoding');
+  return new NextResponse(res.body, { status: res.status, headers });
+}
+
+export { proxy as GET, proxy as POST, proxy as PUT, proxy as PATCH, proxy as DELETE };
