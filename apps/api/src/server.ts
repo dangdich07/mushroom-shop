@@ -29,6 +29,7 @@ process.on('uncaughtException', (err) => {
 
 async function connectMongo() {
   await mongoose.connect(mongoUri, {
+    dbName: process.env.MONGO_DB || 'mushroom',
     serverSelectionTimeoutMS: 10_000, // 10s
     socketTimeoutMS: 45_000,
     maxPoolSize: 10,

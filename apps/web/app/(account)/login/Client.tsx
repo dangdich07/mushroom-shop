@@ -5,17 +5,20 @@ import { signIn, useSession } from 'next-auth/react';
 import Link from 'next/link';
 import { useRouter, useSearchParams } from 'next/navigation';
 
+const API_BASE = (
+  process.env.NEXT_PUBLIC_API_ABSOLUTE_URL || 'http://localhost:4000'
+).replace(/\/$/, '');
+
 function normalizeReturn(urlStr: string | null | undefined): string {
   const raw = urlStr || '/';
   if (!raw.startsWith('/')) return '/';
-  if (raw === '/login') return '/';
+  if (raw === '/login' || raw === '/register') return '/';
   return raw;
 }
 
 export default function Client() {
   const router = useRouter();
   const search = useSearchParams();
-
   const callbackUrl = search.get('callbackUrl');
   const returnTo = search.get('returnTo');
   const returnToSafe = useMemo(
@@ -25,7 +28,6 @@ export default function Client() {
 
   const { status } = useSession();
   const redirectedRef = useRef(false);
-
   useEffect(() => {
     if (status === 'authenticated' && !redirectedRef.current) {
       redirectedRef.current = true;
@@ -41,23 +43,27 @@ export default function Client() {
   async function onSubmit(e: FormEvent) {
     e.preventDefault();
     if (loading) return;
-
     setErr(null);
     setLoading(true);
 
     try {
-      const r = await fetch('/api/backend/auth/login', {
+      // B1: Gọi trực tiếp backend để browser nhận cookie 'session'
+      const r = await fetch(`${API_BASE}/auth/login`, {
         method: 'POST',
         headers: { 'Content-Type': 'application/json', Accept: 'application/json' },
         body: JSON.stringify({ email, password }),
-        credentials: 'include',
+        credentials: 'include', // cần để Set-Cookie lưu vào trình duyệt
       });
-      if (!r.ok) {
-        const txt = await r.text().catch(() => '');
-        throw new Error(txt || `Đăng nhập backend thất bại (HTTP ${r.status})`);
-      }
+      const txt = await r.text().catch(() => '');
+      if (!r.ok) throw new Error(txt || `Đăng nhập backend thất bại (HTTP ${r.status})`);
 
-      const res = await signIn('credentials', { redirect: false, email, password });
+      // B2: Tạo phiên NextAuth để useSession() dùng được
+      const res = await signIn('credentials', {
+        redirect: false,
+        email,
+        password,
+        callbackUrl: returnToSafe,
+      });
       if (!res || res.error) throw new Error('Sai email hoặc mật khẩu.');
 
       router.replace(returnToSafe);
@@ -86,7 +92,7 @@ export default function Client() {
               <label htmlFor="email" className="block text-xs font-medium text-gray-700 uppercase tracking-wide">Email</label>
               <input id="email" type="email" required autoComplete="email"
                 className="w-full rounded-xl border border-gray-200 bg-gray-50/60 px-3 py-2.5 text-sm outline-none transition focus:bg-white focus:border-gray-900 focus:ring-2 focus:ring-gray-900/5"
-                value={email} onChange={(e) => setEmail(e.target.value)} placeholder="nhapemail@example.com" />
+                value={email} onChange={(e) => setEmail(e.target.value)} placeholder="you@example.com" />
             </div>
 
             <div className="space-y-1.5">
